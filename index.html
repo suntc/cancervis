@@ -1,0 +1,688 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+#matrix, #linechart {
+  display:inline-block;
+  *display: inline;
+  vertical-align: top;
+}
+
+#linechart {
+  padding-top: 200px
+}
+
+#tooltip {
+  position:absolute;
+  z-index: 10;
+  visibility: hidden;
+  background-color: white;
+  font-size: 110%;
+  box-shadow: 2px 2px 3px #000;
+  border: 1px solid grey;
+}
+
+</style>
+
+<body>
+	<div id = 'title'> 
+	</div>
+	<div id = 'content'>
+		<div id = "matrix">
+			<div id = "matrix-contorl">
+				<button id="button_clear" onclick = "clickClear()">
+					<text id = "text_clear">clear</text>
+				</button>
+				<button id="button_switch" onclick = "clickSwitchMat()">
+					<text id = "text_switch">switch</text>
+				</button>
+				<input id="neighbor-range" type="range" min="1" max="50" value="10" step="1" display="none" onchange="neigborRangeChanged(this.value);"/>
+				<!--input id="channel" type="text" list="channel-list" onchange="channelChanged(this.value);"/>
+				<datalist id="channel-list">
+					<option value="channel 1">
+					<option value="channel 2">
+					<option value="channel 3">
+					<option value="channel 4">
+				</datalist-->
+				<select onchange="channelChanged(this.value);"/>
+					<option value="channel 1">channel 1</option>
+					<option value="channel 2">channel 2</option>
+					<option value="channel 3">channel 3</option>
+					<option value="channel 4">channel 4</option>
+				</select>
+			</div>
+			<div id  = 'matrixcanvas'></div>
+			<div id  = 'contrastmatrix'></div>
+		</div>
+		<div id = "linechart">
+			<div id = "linechart-contorl">
+				<button id="button_simicurve" onclick = "showSimiCurve()">
+					<text id = "text_simicurve">similar curves</text>
+				</button>
+				<input type="range" min="0" max="100" value="10" step="1" onchange="simiTop = this.value;"/>
+			</div>
+			<div id = "general-linechart"> </div>
+			<div id = "single-linechart"> </div>
+		</div>
+	</div>
+</body>
+
+<script src="d3.min.js"></script>
+<script src = 'matData_ch1.js'></script>
+<script src = 'neignborDist_ch1.js'></script>
+<script src = './curveDataDict_ch1.js'></script>
+<script src = './curveDist_ch1.js'></script>
+<script src = 'matData_ch2.js'></script>
+<script src = 'neignborDist_ch2.js'></script>
+<script src = './curveDataDict_ch2.js'></script>
+<script src = './curveDist_ch2.js'></script>
+<script src = 'matData_ch3.js'></script>
+<script src = 'neignborDist_ch3.js'></script>
+<script src = './curveDataDict_ch3.js'></script>
+<script src = './curveDist_ch3.js'></script>
+<script src = './fatMat.js'></script>
+<!--<script src = './curveData_ch1.js'></script>
+<script src = './curveDist_ch1.js'></script>
+<script src = './matData_ch2.js'></script>
+<script src = './neignborDist_ch2.js'></script>
+<!script src = './curveData_ch2.js'></script>
+<script src = './curveDist_ch2.js'></script>
+<script src = './matData_ch3.js'></script>
+<script src = './neignborDist_ch3.js'></script>
+<!script src = './curveData_ch3.js'></script>
+<script src = './curveDist_ch3.js'></script>
+<script src = './matData_ch4.js'></script>
+<script src = './neignborDist_ch4.js'></script>
+<!script src = './curveData_ch4.js'></script>
+<script src = './curveDist_ch4.js'></script>
+!-->
+
+<script>
+
+var tooltip = d3.select("body")
+		.append("div")
+		.attr("id","tooltip");
+		
+var pathArray = []
+var linecArray = []
+//var linecGeneralArray = []
+var linecSimiArray = []
+
+var simiTop = 10;
+var neigborTop = 10;
+
+var showContrast = false;
+
+var curveData = [curveDataDict_ch1,curveDataDict_ch2];
+var matData = [matData_ch1,matData_ch2];
+var neignborDist = [neignborDist_ch1,neignborDist_ch2];
+curveDist = [curveDist_ch1, curveDist_ch2];
+var maxx = [maxx_ch1, maxx_ch2]
+var maxy = [maxy_ch1, maxy_ch2]
+
+var currentChannel = 0;
+
+var clickClear = function()
+{
+	console.log("clear");
+	d3.select("div#matrixcanvas").selectAll("*").remove();
+	d3.select("div#general-linechart").selectAll("*").remove();
+	d3.select("div#single-linechart").selectAll("*").remove();
+	
+	pathArray = [];
+	linecArray = [];
+
+	displayMatrix();
+	displayGeneralLinechart();
+}
+
+var displaySimiLinechart = function()
+{
+	selected_data = d3.selectAll('#general-linechart path').filter('.selected').data();
+
+	d3.select("div#general-linechart").selectAll("*").remove();
+	d3.select("div#single-linechart").selectAll("*").remove();
+	displayGeneralLinechart();
+	
+	for (var i = 0; i < linecArray.length ; ++i){
+		addLinechart(linecArray[i]);
+		addToGeneralLinechart(linecArray[i]);
+	}
+	for (var i = 0; i < linecSimiArray.length ; ++i){
+		addLinechart(linecSimiArray[i]);
+		addToGeneralLinechart(linecSimiArray[i], ['compared']);
+	}
+	d3.selectAll('#general-linechart path')
+		.filter(function(d){ return !selected_data.every( function(t){ return (t.x!=d.x || t.y!=d.y)}  ) })
+		.classed('selected', true)
+		.classed('activated', true);
+		
+	setColor();
+	showCircle();
+}
+
+////////////////////////////
+
+var clicking = false;
+
+
+	function mouseDown(evt){
+        clicking=true;
+        console.log("drag")
+		//clickX = evt.clientX; 
+        //clickY = evt.clientY;
+        //evt.target.setAttribute("fill","green");
+    }
+
+    function move(c){
+		//console.log("mve")
+        if(clicking){
+			console.log(c.tumor)
+            d3.select(this).style("stroke","green").style("stroke-width",1)
+			if (c.lifetime > 0){
+				addLinechart(c);
+				addToGeneralLinechart(c);
+				if (!linecArray.includes(c))
+					linecArray.push(c);
+			}
+			//moveX = lastMoveX + ( evt.clientX - clickX );
+            //moveY = lastMoveY + ( evt.clientY - clickY );
+			//console.log(evt.clientX, evt.clientY)
+            //evt.target.setAttribute("fill","green");
+			//evt.target.setAttribute("transform", "translate(" + moveX + "," + moveY + ")");
+        }
+		else if (showContrast){
+			key = String(c.y) + ','+ String(c.x);
+			nd = neignborDist[currentChannel]
+			if (key in nd){
+				if (nd[key][neigborTop] != -1){
+					tooltip.style("visibility", "visible");
+					tooltip.text(nd[key][neigborTop]);
+				}
+			}
+		}
+		else if (!showContrast){
+			if (c.lifetime > 0){
+				tooltip.style("visibility", "visible");
+				tooltip.text(c.lifetime);
+			}
+		}
+    }
+
+    function endMove(evt){
+        console.log("endMove")
+		clicking=false;
+        //evt.target.setAttribute("fill","gray");
+    }
+
+/////////////////////////////////////////////////////////////////////
+// matrix related
+
+	var showCircle = function()
+	{
+		var margin = {top: 20, right: 20, bottom: 30, left: 30},
+		width = 800 - margin.left - margin.right,
+		height = 800 - margin.top - margin.bottom;
+		
+		var x = d3.scale.linear()
+		.range([0, width])
+		.domain([0, maxx[currentChannel]]);
+
+		var y = d3.scale.linear()
+		.range([0, height])
+		.domain([0, maxy[currentChannel]]);
+
+	
+		d3.select('div#matrixcanvas').selectAll('circle').remove();
+		
+		data = d3.selectAll('#general-linechart path').filter('.compared').data();
+		var cmp_circles = d3.select('div#matrixcanvas svg g').selectAll('cmp_circle')
+			.data(data)
+			.enter()
+			.append('circle')
+			.attr('cx', function(d) { return x(d.x) + x(1)/2 } )
+			.attr('cy', function(d) { return y(d.y) + y(1)/2 } )
+			.attr('r', 8)
+			.style('stroke', 'purple')
+			.style('stroke-width', '3')
+			.style('fill', 'none')
+		
+		data = d3.selectAll('#general-linechart path').filter('.activated').data();
+		//data = [{x:100,y:200},{x:300,y:300}]
+		var circles = d3.select('div#matrixcanvas svg g').selectAll('act_circle')
+			.data(data)
+			.enter()
+			.append('circle')
+			.attr('cx', function(d) { return x(d.x) + x(1)/2 } )
+			.attr('cy', function(d) { return y(d.y) + y(1)/2 } )
+			.attr('r', 8)
+			.style('stroke', 'black')
+			.style('stroke-width', '3')
+			.style('fill', 'none')
+		
+	}
+	
+	var setColor = function()
+	{
+		opacity = 0.4;
+		swidth = 1.5;
+		
+		d3.selectAll('#general-linechart path').filter('.linechart')
+			.style("stroke-width",String(swidth))
+			.attr("stroke-opacity", opacity);
+		d3.selectAll('#general-linechart path').filter('.selected')
+			.style("stroke-width",String(swidth+1))
+			.attr("stroke-opacity", opacity+0.6)
+		d3.selectAll('#general-linechart path').filter('.activated')
+			.style("stroke-width",String(swidth+1))
+			.attr("stroke-opacity", opacity+0.6)
+	}
+
+var clickSwitchMat = function()
+{
+	showContrast = !showContrast;
+	if (showContrast){
+		d3.select('input#neighbor-range').style('display', 'inline');
+	}
+	else{
+		d3.select('input#neighbor-range').style('display', 'none');
+	}
+	setMatColor();
+}
+	
+var neigborRangeChanged = function(value)
+{
+	neigborTop = value;
+	setMatColor();
+}
+	
+var setMatColor = function()
+{
+	var svg = d3.select('div#matrixcanvas g')
+	svg.selectAll('rect').attr('fill', function (d) { return color(d); })
+}
+
+	var color = function(d)
+	{
+		if (showContrast){
+			key = String(d.y) + ','+ String(d.x);
+			nd = neignborDist[currentChannel]
+			if (key in nd){
+				if (nd[key][neigborTop] == -1)
+					return '#FFFFFF'
+				else
+					return contrastColormap(nd[key][neigborTop])
+			}
+			else
+				return '#FFFFFF'	
+		}
+		else{
+			if (d.lifetime <= 0)
+				return '#FFFFFF'
+			else 
+				return basicColormap[currentChannel](d.lifetime);
+		}
+		
+	}
+
+var displayMatrix = function()
+{
+	var margin = {top: 20, right: 20, bottom: 30, left: 30},
+    width = 800 - margin.left - margin.right,
+    height = 800 - margin.top - margin.bottom;
+	
+	
+	basicColormap_ch1 = d3.scale.linear()
+			  .domain([5.5, 4.7, 3.8, 3])
+			  .range(['#D7191C', '#FDAE61', '#ABD9E9', '#2C7BB6']);
+			  
+	basicColormap_ch2 = d3.scale.linear()
+			  .domain([7, 5.9, 4.7, 3.5])
+			  .range(['#D7191C', '#FDAE61', '#ABD9E9', '#2C7BB6']);
+			  
+	basicColormap_ch3 = d3.scale.linear()
+			  .domain([7.5, 6.1, 4.5, 3])
+			  .range(['#D7191C', '#FDAE61', '#ABD9E9', '#2C7BB6']);
+	
+	basicColormap = [basicColormap_ch1,basicColormap_ch2,basicColormap_ch3];
+			  
+	contrastColormap = d3.scale.linear()
+			  .domain([1.2, 0.5, 0.35, 0.25])
+			  .range(['#D7191C', '#FDAE61', '#ABD9E9', '#2C7BB6']);
+	
+	var x = d3.scale.linear()
+	  .range([0, width])
+	  .domain([0, maxx[currentChannel] ]);
+
+	var y = d3.scale.linear()
+	  .range([0, height])
+	  .domain([0, maxy[currentChannel] ]);
+
+	var svg = d3.select('div#matrixcanvas').append('svg')
+	  .attr('width', width + margin.left + margin .right)
+	  .attr('height', height + margin.top + margin.bottom)
+	.append('g')
+	  .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')')
+	  .on("mousedown",mouseDown)
+	  .on("mouseup",endMove)
+
+	mData = matData[currentChannel];
+	
+	svg.selectAll('.cell')
+	  .data(mData)
+	.enter().append('rect')
+	  .attr('x', function (d) { return x(d.x); })
+	  .attr('y', function (d) { return y(d.y); })
+	  .attr('width', function (d) { return x(d.x + 1) - x(d.x); })
+	  .attr('height', function (d) { return y(d.y + 1) - y(d.y); })
+	  .attr('fill', function (d) { return color(d); })
+	  .attr('stroke', function (d) {if (d.tumor == 1) return "black"; else if(fatMat[d.y][d.x]==1) return "grey";} )
+	  .on("mouseover", move)
+	  .on("mousemove", function(){ tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); })
+	  .on("mouseout", function(){ tooltip.style("visibility", "hidden"); })
+	  
+	var xAxis = d3.svg.axis()
+	  .scale(x)
+	  .orient('bottom');
+
+	var yAxis = d3.svg.axis()
+	  .scale(y)
+	  .orient('left');
+	  
+	svg.append("g")
+	  .attr("class", "x axis")
+	  .attr("transform", "translate(0," + height + ")")
+	  .call(xAxis);
+
+	svg.append("g")
+	  .attr("class", "y axis")
+	  .call(yAxis);
+
+}
+
+var updateMatrix = function()
+{
+	var cells = d3.select('div#matrixcanvas svg g').selectAll('rect');
+	cells.data(matData[currentChannel])
+		.attr('fill', function (d) { return color(d); });
+}
+
+var channelChanged = function(value)
+{
+	prevCh = currentChannel
+	if (value == "channel 1")
+		currentChannel = 0;
+	else if (value == "channel 2")
+		currentChannel = 1;
+	if (currentChannel == prevCh)
+		return;
+	console.log("channel changed");
+	
+	updateMatrix()
+}
+
+///////////////////////////////////////////////////////////
+// general line chart related
+
+var displayGeneralLinechart = function ()
+{
+	var margin = {top: 20, right: 20, bottom: 30, left: 30},
+    width = 1000 - margin.left - margin.right,
+    height = 600 - margin.top - margin.bottom;
+	
+	var svg = d3.select('div#general-linechart').append('svg')
+	  .attr('width', width + margin.left + margin .right)
+	  .attr('height', height + margin.top + margin.bottom)
+	.append('g')
+	  .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')')
+	  .on("mousedown",mouseDown)
+	  .on("mouseup",endMove)
+	
+	var x = d3.scale.linear().domain([0, 650]).range([0, width]),
+		y = d3.scale.linear().domain([-0.8,0.05]).range([height, 0]),
+		z = d3.scale.ordinal(d3.schemeCategory10);	
+	
+	var xAxis = d3.svg.axis()
+	  .scale(x)
+	  .orient('bottom');
+
+	var yAxis = d3.svg.axis()
+	  .scale(y)
+	  .orient('left');
+	  
+	svg.append("g")
+	  .attr("class", "x axis")
+	  .attr("transform", "translate(0," + height + ")")
+	  .call(xAxis);
+
+	svg.append("g")
+	  .attr("class", "y axis")
+	  .call(yAxis);
+}
+
+var showSimiCurve = function()
+{
+	linecSimiArray = []
+	//d3.selectAll('#general-linechart path').classed('compared', false);
+	chn = String(currentChannel);
+	data = d3.selectAll("#general-linechart path[channel='"+chn+"']").filter('.selected').data();
+	data = data[0]
+	key = String(data.y) + ','+ String(data.x);
+	console.log(key);
+	cd = curveDist[currentChannel]
+	// need change!!!!!!!!!!!!!!!!!!
+	toshow = cd[key].slice(0,simiTop);
+	d3.selectAll('div#matrixcanvas rect').data()
+		.filter( function(d) {return ( !toshow.every(function(t) {return (t[0]!=d.y || t[1]!=d.x);}) )})//rect in toshow
+			.forEach(function(d) {console.log(d.y, d.x);
+									if (d.lifetime > 0 && (d.x!=data.x || d.y!=data.y)){
+										linecSimiArray.push(d);
+										//addLinechart(d);
+										//addToGeneralLinechart(d);
+										}
+									});
+	displaySimiLinechart();
+}
+
+
+var addToGeneralLinechart = function (c, cp)
+{	
+		
+	if (c.lifetime == 0)
+		return;
+	var linecolor = function(d)
+	{
+		if (d == 0){
+			return 'green';
+		}
+		else {
+			return "red";
+		}
+	}
+	
+	var onPath = function(p)
+	{
+		//d3.select(this).style("stroke-width",String(swidth+1)).attr("stroke-opacity", opacity+0.6)
+		if (!d3.select(this).classed("selected")){
+			d3.select(this).classed("activated", true);
+			setColor();
+			showCircle();
+		}
+		chn = parseInt(d3.select(this).attr("channel")) + 1;
+		tooltip.style("visibility", "visible");
+		tooltip.text( "channel "+String(chn)+" - lifetime="+String(p.lifetime.toFixed(3)) + ", intensity="+String(p.intensity.toFixed(3)) );
+	}
+	
+	var outPath = function()
+	{	
+		if (!d3.select(this).classed("selected")){
+			//d3.select(this).attr("class", "linechart");
+			d3.select(this).classed('activated', false);
+			setColor();
+			showCircle();
+		}
+		//d3.select(this).style("stroke-width",String(swidth)).attr("stroke-opacity", opacity);
+		tooltip.style("visibility", "hidden");
+	}
+	
+	var clickPath = function()
+	{
+		if (d3.select(this).classed("selected")){
+			d3.select(this).classed("selected", false);
+			d3.select(this).classed("activated", false);
+			setColor();
+			showCircle();
+		}
+		else{
+			d3.select(this).classed("selected", true);
+			d3.select(this).classed("activated", true);
+			setColor();
+			showCircle();
+		}
+	}
+
+	var svg = d3.select('div#general-linechart').select('svg g');
+	var margin = {top: 20, right: 20, bottom: 30, left: 30},
+    
+	width = 1000 - margin.left - margin.right,
+    height = 600 - margin.top - margin.bottom;
+	
+	opacity = 0.4
+	swidth = 1.5
+	
+	var x = d3.scale.linear().domain([0, 650]).range([0, width]),
+		y = d3.scale.linear().domain([-0.8,0.05]).range([height, 0]),
+		z = d3.scale.ordinal(d3.schemeCategory10);
+		
+	var line = d3.svg.line()
+    .x(function(d, i) { return x(i); })
+    .y(function(d) { return y(d); });
+	
+	var data = curveData[currentChannel][[c.y,c.x]]
+	
+	var path = svg.append("path").data([{lifetime:c.lifetime, intensity:c.intensity, tumor:c.tumor, x:c.x, y:c.y}])
+						.attr("id", String(c.y)+'-'+String(c.x))
+						.attr("class", "linechart")
+						.attr("channel", currentChannel)
+						.attr("d", line(data))
+						.style("stroke",linecolor(c.tumor))
+						.style("stroke-width",String(swidth))
+						.style("fill","none")
+						.attr('stroke-opacity', opacity)
+						.on('mouseover', onPath)
+						.on("mouseout", outPath)
+						.on("click", clickPath)
+						.on("mousemove", function(){ tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); })
+	
+	if (cp != undefined){
+		for (var i = 0; i < cp.length ; ++i)
+			path.classed(cp[i], true);
+		}
+	
+	
+	// set other path's opacity
+	for (var i = 0; i < pathArray.length ; ++i){
+		pathArray[i].attr('stroke-opacity', opacity)
+					.attr('stroke-width', swidth);
+	}
+		
+	pathArray.push(path)
+	//linecGeneralArray.push(c)
+}
+
+
+///////////////////////////////////////////////////////////
+// single line chart related
+
+var addLinechart = function(c)
+{
+		
+	var linecolor = function(d)
+	{
+		if (d == 0){
+			return 'green'
+		}
+		else {
+			return "red"
+		}
+	}
+	
+	var onPath = function(p)
+	{
+		d3.select(this).style("stroke-width","2.5");
+		tooltip.style("visibility", "visible");
+		tooltip.text("lifetime="+String(p.lifetime) + ", intensity="+String(p.intensity));
+	}
+	
+	var outPath = function()
+	{
+		d3.select(this).style("stroke-width","1.5");
+		tooltip.style("visibility", "hidden");
+	}
+	
+	var data = curveData[currentChannel][[c.y,c.x]]
+
+	var margin = {top: 20, right: 20, bottom: 30, left: 30},
+    width = 600 - margin.left - margin.right,
+    height = 300 - margin.top - margin.bottom;
+	var ldiv = d3.select('div#single-linechart').append('div').attr('class','single-line')
+											.attr('id',String(c.y)+'-'+String(c.x));
+			
+	var lsvg = ldiv.append('svg').attr('width', width + margin.left + margin.right)
+								.attr('height', height + margin.top + margin.bottom)
+								.append('g')
+								.attr('transform', 'translate(' + margin.left + ',' + margin.top + ')')
+
+	var x = d3.scale.linear().domain([0, data.length]).range([0, width]),
+		y = d3.scale.linear().domain([-0.5,0.05]).range([height, 0]),
+		z = d3.scale.ordinal(d3.schemeCategory10);
+		
+	var line = d3.svg.line()
+    .x(function(d, i) { return x(i); })
+    .y(function(d) { return y(d); });
+	
+	var xAxis = d3.svg.axis()
+	  .scale(x)
+	  .orient('bottom');
+
+	var yAxis = d3.svg.axis()
+	  .scale(y)
+	  .orient('left');
+	  
+	lsvg.append("g")
+	  .attr("class", "x axis")
+	  .attr("transform", "translate(0," + height + ")")
+	  .call(xAxis);
+
+	lsvg.append("g")
+	  .attr("class", "y axis")
+	  .call(yAxis);
+	 
+	lsvg.append("path").data([{lifetime:c.lifetime, intensity:c.intensity, tumor:c.tumor}])
+						.attr("d", line(data))
+						.style("stroke",linecolor(c.tumor))
+						.style("stroke-width","1.5")
+						.style("fill","none")
+						.on('mouseover', onPath)
+						.on("mouseout", outPath)
+						.on("mousemove", function(){ tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); });
+	
+	//linecSingleArray.push(c)
+}
+
+
+
+
+displayMatrix();
+displayGeneralLinechart();
+showCircle()
+d3.select('input#neighbor-range').style('display', 'none');
+
+</script>
